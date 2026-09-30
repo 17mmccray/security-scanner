@@ -172,6 +172,8 @@ def build_context(findings: dict, generated_at: Optional[datetime] = None) -> di
     low_conf = [s for s in (cve_data or {}).get("services", []) if s.get("confidence") == "low" and s.get("cves")]
     backported = [s for s in (cve_data or {}).get("services", []) if s.get("distro") and s.get("cves")]
 
+    shodan = _shodan_context(findings.get("shodan"), set(every))
+
     return {
         "target": findings.get("target") or scan.get("target", ""),
         "tool_version": findings.get("tool_version", ""),
@@ -201,12 +203,38 @@ def build_context(findings: dict, generated_at: Optional[datetime] = None) -> di
         "skipped": skipped,
         "low_confidence": low_conf,
         "backported": backported,
-        "recommendations": _recommendations(counts, kev, exposures, skipped, low_conf, backported, cve_data is not None),
-        "shodan": findings.get("shodan"),
+        "recommendations": _recommendations(counts, kev, exposures, skipped, low_conf, backported,
+                                            cve_data is not None, shodan),
+        "shodan": shodan,
     }
 
 
-def _recommendations(counts, kev, exposures, skipped, low_conf, backported, assessed) -> list[str]:
+def _shodan_context(data: Optional[dict], nvd_ids: set[str]) -> Optional[dict]:
+    """Shape Shodan results for the templates. None when --shodan wasn't used."""
+    if not data:
+        return None
+    hosts = []
+    for h in data.get("hosts", []):
+        vulns = h.get("vulns") or []
+        hosts.append({
+            **h,
+            "source_label": {"shodan": "Shodan API", "internetdb": "Shodan InternetDB"}.get(h.get("source"), h.get("source")),
+            # CVEs Shodan associates with the host that our version-based NVD lookup didn't produce
+            "extra_vulns": [v for v in vulns if v not in nvd_ids],
+        })
+    return {
+        "hosts": hosts,
+        "skipped": data.get("skipped", []),
+        "api_problem": data.get("api_problem", ""),
+        "extra_ports": [
+            (h["ip"], [p for p in h["ports_only_in_shodan"] if p not in (h.get("likely_udp") or [])])
+            for h in hosts if set(h.get("ports_only_in_shodan") or []) - set(h.get("likely_udp") or [])
+        ],
+        "udp_ports": [(h["ip"], h["likely_udp"]) for h in hosts if h.get("likely_udp")],
+    }
+
+
+def _recommendations(counts, kev, exposures, skipped, low_conf, backported, assessed, shodan=None) -> list[str]:
     recs = []
     if kev:
         ids = ", ".join(c["cve_id"] for c in kev[:5]) + (" and others" if len(kev) > 5 else "")
@@ -239,6 +267,18 @@ def _recommendations(counts, kev, exposures, skipped, low_conf, backported, asse
         recs.append(
             f"{len(skipped)} service(s) couldn't be checked for CVEs because no version was detected. "
             "Re-scan with version detection (e.g. --profile full) or check them manually."
+        )
+    if shodan and shodan["extra_ports"]:
+        detail = "; ".join(f"{ip}: {', '.join(map(str, ports))}" for ip, ports in shodan["extra_ports"])
+        recs.append(
+            f"Shodan has seen open ports our scan didn't report ({detail}). Re-scan those ports with "
+            "--ports to confirm whether they're still exposed."
+        )
+    if shodan and shodan["udp_ports"]:
+        detail = "; ".join(f"{ip}: {', '.join(map(str, ports))}" for ip, ports in shodan["udp_ports"])
+        recs.append(
+            f"Shodan lists ports that normally run over UDP ({detail}), which this TCP scan can't see. "
+            "Confirm with a UDP scan (nmap -sU) and close any that don't need to be public."
         )
     if not assessed:
         recs.append("CVE lookup was not run. Re-run without --no-cve for vulnerability data.")
@@ -393,12 +433,59 @@ No open ports found.
 {% endfor %}
 
 {% endif %}
+{% if shodan %}
+## Passive recon (Shodan)
+
+{% if shodan.api_problem %}
+*Shodan API not used ({{ shodan.api_problem | md }}); results are from the free InternetDB.*
+
+{% endif %}
+{% for h in shodan.hosts %}
+### {{ h.ip | md }}
+
+{% if not h.found %}
+{{ (h.note or "No Shodan data.") | md }} ({{ h.source_label }})
+
+{% else %}
+| | |
+|---|---|
+| **Source** | {{ h.source_label }}{% if h.last_update %}, last seen {{ h.last_update }}{% endif %} |
+{% if h.hostnames %}
+| **Hostnames** | {{ h.hostnames | join(", ") | md }} |
+{% endif %}
+{% if h.org or h.isp %}
+| **Org / ISP** | {{ [h.org, h.isp] | select | join(" / ") | md }} |
+{% endif %}
+| **Ports** | {% for p in h.ports %}{{ p }}{{ " (likely UDP; not in our TCP scan)" if p in (h.likely_udp or []) else (" (not in our scan)" if p in h.ports_only_in_shodan) }}{{ ", " if not loop.last }}{% endfor %} |
+{% if h.tags %}
+| **Tags** | {{ h.tags | join(", ") | md }} |
+{% endif %}
+| **CVEs Shodan lists** | {{ h.vulns | length }}{% if h.extra_vulns %} ({{ h.extra_vulns | length }} not found by our NVD lookup){% endif %} |
+
+{% if h.extra_vulns %}
+CVEs Shodan associates with this host that the NVD step didn't match: {% for v in h.extra_vulns[:20] %}[{{ v }}](https://nvd.nist.gov/vuln/detail/{{ v }}){{ ", " if not loop.last }}{% endfor %}{{ " ..." if h.extra_vulns | length > 20 }}
+
+{% endif %}
+{% if h.note %}
+*{{ h.note | md }}*
+
+{% endif %}
+{% endif %}
+{% endfor %}
+{% for s in shodan.skipped %}
+- Skipped {{ s.target | md }}: {{ s.reason | md }}
+{% endfor %}
+
+{% endif %}
 ## Methodology
 
 1. **Port & service scan:** nmap (`{{ scan.command_line | md }}`).
 2. **CVE lookup:** NIST NVD API 2.0. Services with a CPE were matched by product and version (high confidence); others by keyword search (low confidence).
 3. **Severity:** CVSS base scores mapped to Critical (9.0+), High (7.0-8.9), Medium (4.0-6.9), Low (0.1-3.9).
-4. **Limitations:** matching is by advertised version. Linux distributions backport fixes without changing version numbers, so distro-packaged services can be flagged for CVEs that are already patched.
+{% if shodan %}
+4. **Passive recon:** Shodan ({{ shodan.hosts | map(attribute="source_label") | unique | join(", ") or "none" }}), which reports what Shodan's own internet-wide scans observed. Its data can be days or weeks old.
+{% endif %}
+5. **Limitations:** matching is by advertised version. Linux distributions backport fixes without changing version numbers, so distro-packaged services can be flagged for CVEs that are already patched.
 
 ---
 

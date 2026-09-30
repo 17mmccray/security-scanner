@@ -6,7 +6,7 @@ Pipeline: nmap scan -> (optional) Shodan recon -> CVE lookup -> report.
 
 Usage:
     python main.py --target example.com --output report.html
-    python main.py --target 192.168.1.1 --shodan --output report.html
+    python main.py --target scanme.nmap.org --shodan --output report.html
     python main.py --target example.com --output report.md
     python main.py --target 10.0.0.0/24 --profile quick --output scan.json
     python main.py --list-profiles
@@ -35,6 +35,8 @@ from scanner.cve_lookup import (
     NVDClient,
     lookup_scan,
 )
+from scanner.shodan_recon import ShodanError, ShodanReport, ShodanRecon
+from scanner.shodan_recon import recon as shodan_recon
 from scanner.nmap_scan import (
     DEFAULT_PROFILE,
     SCAN_PROFILES,
@@ -50,7 +52,7 @@ try:  # load API keys from .env if python-dotenv is installed
 except ImportError:
     pass
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 SEVERITY_STYLES = {
     "CRITICAL": "bold white on red",
@@ -204,6 +206,59 @@ def render_cves(report: CVEReport, verbose: bool = False) -> None:
         console.print()
 
 
+def render_shodan(report: ShodanReport) -> None:
+    for item in report.skipped:
+        console.print(f"[dim]Skipped {item['target']}: {item['reason']}[/]")
+
+    for h in report.hosts:
+        source = {"shodan": "Shodan API", "internetdb": "InternetDB"}.get(h.source, h.source)
+        if not h.found:
+            console.print(f"[bold]{h.ip}[/]  [dim]{h.note or 'no Shodan data'} ({source})[/]\n")
+            continue
+
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(style="bold")
+        grid.add_column(overflow="fold")
+        grid.add_row("Source", source + (f"  [dim]last seen {h.last_update}[/]" if h.last_update else ""))
+        if h.hostnames:
+            grid.add_row("Hostnames", ", ".join(h.hostnames[:6]) + (" ..." if len(h.hostnames) > 6 else ""))
+        if h.org or h.isp:
+            grid.add_row("Org / ISP", " / ".join(x for x in (h.org, h.isp) if x))
+        if h.os or h.country:
+            grid.add_row("OS / Country", " / ".join(x for x in (h.os, h.country) if x))
+        ports = []
+        for p in h.ports:
+            ports.append(f"[bold yellow]{p}*[/]" if p in h.ports_only_in_shodan else str(p))
+        grid.add_row("Ports", ", ".join(ports) or "-")
+        if h.tags:
+            grid.add_row("Tags", ", ".join(h.tags))
+        if h.vulns:
+            shown = ", ".join(h.vulns[:8]) + (f" (+{len(h.vulns) - 8} more)" if len(h.vulns) > 8 else "")
+            grid.add_row("Shodan CVEs", f"{len(h.vulns)}: [dim]{shown}[/]")
+        console.print(Panel(grid, title=f"[bold]{h.ip}[/]", border_style="magenta", expand=False))
+
+        tcp_extra = [p for p in h.ports_only_in_shodan if p not in h.likely_udp]
+        if tcp_extra:
+            console.print(
+                f"  [yellow]* Shodan sees port(s) {', '.join(map(str, tcp_extra))} that our scan "
+                f"didn't report.[/] [dim]They may be outside the scanned port range, filtered from your "
+                f"network, or recently closed. Check with --ports {','.join(map(str, tcp_extra))}[/]"
+            )
+        if h.likely_udp:
+            console.print(
+                f"  [yellow]* Port(s) {', '.join(map(str, h.likely_udp))} are usually UDP[/] [dim](e.g. 123 = NTP, "
+                f"161 = SNMP). Our scan is TCP-only; confirm with: nmap -sU -p {','.join(map(str, h.likely_udp))} {h.ip}[/]"
+            )
+        if h.ports_only_in_scan:
+            console.print(
+                f"  [dim]Our scan found port(s) {', '.join(map(str, h.ports_only_in_scan))} that Shodan "
+                f"hasn't indexed.[/]"
+            )
+        if h.note:
+            console.print(f"  [dim]{h.note}[/]")
+        console.print()
+
+
 def log_query(method: str, query: str, count: int, message: str) -> None:
     kind = "CPE    " if method == "cpe" else "keyword"
     noun = "match" if count == 1 else "matches"
@@ -275,8 +330,29 @@ def run(args: argparse.Namespace) -> int:
     if not args.shodan:
         skipped("pass --shodan to enable")
     else:
-        # TODO: wire up scanner/shodan_recon.py
-        skipped("Shodan module not implemented yet")
+        client = ShodanRecon()
+        console.print(
+            "[dim]Using the Shodan API.[/]" if client.api_key
+            else "[dim]No SHODAN_API_KEY set: using Shodan's free InternetDB (ports, CPEs, CVE IDs; updated weekly).[/]"
+        )
+        try:
+            with console.status("[bold cyan]Querying Shodan...", spinner="dots") as status:
+                shodan_report = shodan_recon(
+                    args.target,
+                    scan=findings["scan"],
+                    client=client,
+                    on_progress=lambda done, total, ip: status.update(
+                        f"[bold cyan]Querying Shodan[/] [{done}/{total}] [dim]{ip}[/]"
+                    ),
+                )
+        except ShodanError as exc:
+            console.print(f"[red]Shodan lookup failed:[/] {exc}")
+            console.print("[dim]Continuing without Shodan data.[/]\n")
+        else:
+            if client.api_problem:
+                console.print(f"[yellow]Shodan API:[/] {client.api_problem}. [dim]Fell back to InternetDB.[/]")
+            render_shodan(shodan_report)
+            findings["shodan"] = shodan_report.to_dict()
 
     # Step 3: CVE lookup
     stage(3, "CVE lookup (NVD)")
@@ -365,7 +441,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", "-o", type=output_file,
         help="report file; format from extension: .html, .md, or .json",
     )
-    core.add_argument("--shodan", action="store_true", help="include Shodan passive recon (needs SHODAN_API_KEY)")
+    core.add_argument("--shodan", action="store_true", help="include Shodan passive recon (full API with SHODAN_API_KEY + membership, else free InternetDB)")
     core.add_argument("--no-cve", action="store_true", help="skip the NVD CVE lookup")
     core.add_argument(
         "--save-json", action="store_true",

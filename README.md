@@ -13,7 +13,7 @@ Built as a portfolio project applying concepts from CSIS 486 (Ethical Hacking) t
 - **Severity Scoring** — Maps CVSS scores to Critical / High / Medium / Low ratings and flags CVEs in CISA's Known Exploited Vulnerabilities (KEV) catalog
 - **Exposure Checks** — Flags risky services (Telnet, FTP, SMB, RDP, exposed databases) regardless of version
 - **HTML & Markdown Reports** — Executive summary, prioritized recommendations, and per-service findings via Jinja2
-- **Passive Recon** *(planned)* — Shodan API lookup for historical exposure data without touching the target
+- **Passive Recon** — Shodan lookup of what the internet already sees for the target, without touching it. Flags ports Shodan has seen that the scan missed. Uses the full Shodan API with a membership key, otherwise the free [InternetDB](https://internetdb.shodan.io/)
 
 ---
 
@@ -24,7 +24,7 @@ Built as a portfolio project applying concepts from CSIS 486 (Ethical Hacking) t
 - [NIST NVD API 2.0](https://nvd.nist.gov/developers/vulnerabilities)
 - [Jinja2](https://jinja.palletsprojects.com/)
 - [Rich](https://github.com/Textualize/rich)
-- [Shodan API](https://developer.shodan.io/) *(planned)*
+- [Shodan API](https://developer.shodan.io/) / [InternetDB](https://internetdb.shodan.io/)
 
 ---
 
@@ -35,7 +35,7 @@ security-scanner/
 ├── main.py                 # CLI entry point: scan → recon → CVE lookup → report
 ├── scanner/
 │   ├── nmap_scan.py        # Port and service fingerprinting
-│   ├── shodan_recon.py     # Passive recon via Shodan (planned)
+│   ├── shodan_recon.py     # Passive recon via Shodan / InternetDB
 │   └── cve_lookup.py       # NVD API CVE queries
 ├── reporter/
 │   ├── report.py           # Assembles findings into HTML / Markdown
@@ -53,8 +53,8 @@ security-scanner/
 # Basic scan
 python main.py --target example.com --output report.html
 
-# With Shodan passive recon (planned)
-python main.py --target 192.168.1.1 --shodan --output report.html
+# With Shodan passive recon
+python main.py --target scanme.nmap.org --shodan --output report.html
 
 # Output as Markdown
 python main.py --target example.com --output report.md
@@ -100,7 +100,7 @@ pip install -r requirements.txt
 
 ```
 NVD_API_KEY=your_key_here      # optional but recommended, free at https://nvd.nist.gov/developers/request-an-api-key
-SHODAN_API_KEY=your_key_here   # for --shodan (planned)
+SHODAN_API_KEY=your_key_here   # optional; host lookups need a Shodan membership, otherwise --shodan uses free InternetDB
 ```
 
 Without an NVD key the tool still works, but NVD limits lookups to 5 requests per 30 seconds (50 with a key). Responses are cached for 24 hours.
@@ -152,7 +152,8 @@ The generated HTML report includes an executive summary with an overall risk rat
 1. **Scan.** Nmap runs with service/version detection (`-sV`). CPE identifiers are read directly from Nmap's XML output, because python-nmap keeps only the last CPE per port (for an SSH port it would keep `linux_kernel` and drop `openssh`).
 2. **Look up.** Each service's CPE is converted to CPE 2.3 and matched with NVD's `virtualMatchString`. Queries run in tiers: the exact version plus update (`6.6.1:p1`) and the same version with any update (`6.6.1:*`) are merged, because NVD records most CVEs as version ranges. A keyword search is the last resort and is labeled low confidence.
 3. **Score.** Every match is counted and rated on the CVSS v3 scale (v2 scores are re-rated). KEV-listed CVEs are always shown, even outside the top N.
-4. **Report.** Findings are rendered to HTML or Markdown. Banner and CVE text are escaped, since they come from the scanned host and third parties.
+4. **Recon (optional).** With `--shodan`, each public IP is looked up in Shodan and its known ports are compared with the scan's, surfacing services outside the scanned range or filtered from the scanner's network.
+5. **Report.** Findings are rendered to HTML or Markdown. Banner and CVE text are escaped, since they come from the scanned host and third parties.
 
 ### Limitations
 
@@ -167,7 +168,7 @@ The generated HTML report includes an executive summary with an overall risk rat
 python -m unittest discover -s tests -v
 ```
 
-49 offline tests cover CPE conversion, NVD query fallbacks, rate limiting and retries, CVSS parsing, report rendering, and HTML escaping of hostile banners. They include regression cases from live scans. No network or Nmap install needed.
+67 offline tests cover CPE conversion, NVD query fallbacks, Shodan API/InternetDB fallback, rate limiting and retries, CVSS parsing, report rendering, and HTML escaping of hostile banners. They include regression cases from live scans. No network or Nmap install needed.
 
 ---
 
@@ -181,7 +182,7 @@ This project applies the security methodology from CSIS 486 (Ethical Hacking) �
 
 - [x] Nmap scanner module
 - [x] NVD CVE lookup module
-- [ ] Shodan recon module
+- [x] Shodan recon module
 - [x] HTML report generator
 - [ ] `--compare` flag to diff two reports
 - [ ] CI pipeline with automated test scans

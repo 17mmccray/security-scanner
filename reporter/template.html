@@ -82,9 +82,10 @@
   /* Tables */
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  tbody th { width: 150px; text-transform: none; letter-spacing: 0; font-size: 13px; vertical-align: top; }
   th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); }
   td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  tr:last-child td { border-bottom: none; }
+  tr:last-child td, tr:last-child th { border-bottom: none; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .host + .host { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--border); }
   .host-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
@@ -301,12 +302,64 @@
 </section>
 {% endif %}
 
+{% if shodan %}
+<section>
+  <h2>Passive recon (Shodan)</h2>
+  <p class="muted small" style="margin-top:-6px">What Shodan's internet-wide scanning has observed for these hosts, gathered without contacting them.</p>
+  {% if shodan.api_problem %}<p class="note">Shodan API not used ({{ shodan.api_problem }}); results are from the free InternetDB.</p>{% endif %}
+  {% for h in shodan.hosts %}
+  <div class="host">
+    <div class="host-head">
+      <h3 class="mono">{{ h.ip }}</h3>
+      <span class="muted small">{{ h.source_label }}{% if h.last_update %} · last seen {{ h.last_update }}{% endif %}</span>
+    </div>
+    {% if not h.found %}
+    <p class="empty">{{ h.note or "No Shodan data for this IP." }}</p>
+    {% else %}
+    <div class="table-wrap">
+    <table>
+      <tbody>
+        {% if h.hostnames %}<tr><th>Hostnames</th><td>{{ h.hostnames|join(", ") }}</td></tr>{% endif %}
+        {% if h.org or h.isp %}<tr><th>Org / ISP</th><td>{{ [h.org, h.isp]|select|join(" / ") }}</td></tr>{% endif %}
+        {% if h.os or h.country %}<tr><th>OS / Country</th><td>{{ [h.os, h.country]|select|join(" / ") }}</td></tr>{% endif %}
+        <tr><th>Ports</th><td class="mono">
+          {% for p in h.ports %}{% if p in (h.likely_udp or []) %}<span class="tag" title="Usually a UDP service; our scan is TCP-only">{{ p }} UDP?</span>{% elif p in h.ports_only_in_shodan %}<span class="tag" title="Seen by Shodan but not reported by our scan">{{ p }}</span>{% else %}{{ p }}{% endif %}{{ ", " if not loop.last }}{% endfor %}
+        </td></tr>
+        {% if h.tags %}<tr><th>Tags</th><td>{{ h.tags|join(", ") }}</td></tr>{% endif %}
+        <tr><th>CVEs listed</th><td>{{ h.vulns|length }}{% if h.extra_vulns %} <span class="muted small">({{ h.extra_vulns|length }} not found by our NVD lookup)</span>{% endif %}</td></tr>
+      </tbody>
+    </table>
+    </div>
+    {% set tcp_extra = h.ports_only_in_shodan | reject("in", h.likely_udp or []) | list %}
+    {% if tcp_extra %}
+    <p class="note" style="margin-top:10px">Shodan has seen port{{ "s" if tcp_extra|length > 1 }} {{ tcp_extra|join(", ") }} open, but our scan didn't report {{ "them" if tcp_extra|length > 1 else "it" }}. {{ "They" if tcp_extra|length > 1 else "It" }} may be outside the scanned port range, filtered from the scanning network, or recently closed.</p>
+    {% endif %}
+    {% if h.likely_udp %}
+    <p class="note" style="margin-top:10px">Port{{ "s" if h.likely_udp|length > 1 }} {{ h.likely_udp|join(", ") }} normally {{ "run" if h.likely_udp|length > 1 else "runs" }} over UDP, which this TCP scan doesn't cover. Confirm with <code>nmap -sU -p {{ h.likely_udp|join(",") }} {{ h.ip }}</code>.</p>
+    {% endif %}
+    {% if h.extra_vulns %}
+    <details style="margin-top:10px">
+      <summary><span>CVEs Shodan lists that our NVD lookup didn't match</span><span class="muted small">{{ h.extra_vulns|length }}</span></summary>
+      <div class="body small mono" style="line-height:1.9">
+        {% for v in h.extra_vulns %}<a href="https://nvd.nist.gov/vuln/detail/{{ v }}" target="_blank" rel="noopener noreferrer">{{ v }}</a>{{ ", " if not loop.last }}{% endfor %}
+      </div>
+    </details>
+    {% endif %}
+    {% if h.note %}<p class="muted small" style="margin:8px 0 0">{{ h.note }}</p>{% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% for s in shodan.skipped %}<p class="muted small">Skipped {{ s.target }}: {{ s.reason }}</p>{% endfor %}
+</section>
+{% endif %}
+
 <section>
   <h2>Methodology</h2>
   <ol class="small" style="margin:0; padding-left:20px">
     <li><b>Port &amp; service scan:</b> nmap, <code>{{ scan.command_line }}</code></li>
     <li><b>CVE lookup:</b> NIST National Vulnerability Database API 2.0. Services reporting a CPE were matched by exact product and version (high confidence); others by keyword search (low confidence, flagged "verify").</li>
     <li><b>Severity:</b> CVSS base scores mapped to Critical (9.0+), High (7.0–8.9), Medium (4.0–6.9), Low (0.1–3.9). "KEV" marks CVEs in CISA's Known Exploited Vulnerabilities catalog.</li>
+    {% if shodan %}<li><b>Passive recon:</b> {{ shodan.hosts|map(attribute="source_label")|unique|join(", ") or "Shodan" }}, which reports what Shodan's own internet-wide scans observed. It can be days or weeks old.</li>{% endif %}
     <li><b>Limitations:</b> matching is by advertised version. Linux distributions backport fixes without changing version numbers, so distro-packaged services can be flagged for CVEs that are already patched. Findings indicate likely exposure, not confirmed exploitability.</li>
   </ol>
 </section>
