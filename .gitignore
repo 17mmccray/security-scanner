@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# security-scanner outputs
+Claude outputs/
+report.html
+report.md
+report.json
+reports/

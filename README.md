@@ -68,6 +68,7 @@ pip install -r requirements.txt
 Set your API keys in a `.env` file:
 
 SHODAN_API_KEY=your_key_here
+NVD_API_KEY=your_key_here   # optional, free at https://nvd.nist.gov/developers/request-an-api-key
 
 ---
 
@@ -85,10 +86,10 @@ This project applies the security methodology from CSIS 486 (Ethical Hacking) â€
 
 ## Roadmap
 
-- [ ] Nmap scanner module
-- [ ] NVD CVE lookup module
+- [x] Nmap scanner module
+- [x] NVD CVE lookup module
 - [ ] Shodan recon module
-- [ ] HTML report generator
+- [x] HTML report generator
 - [ ] `--compare` flag to diff two reports
 - [ ] CI pipeline with automated test scans
 

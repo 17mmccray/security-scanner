@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="security-scanner {{ tool_version }}">
+<title>Security Audit: {{ target }}</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --text: #1a1d23; --muted: #5d6572; --border: #e2e5ea;
+    --accent: #2f5fd0; --code-bg: #f0f2f5;
+    --crit: #b42318; --crit-bg: #fde8e7;
+    --high: #c4460f; --high-bg: #fdeee4;
+    --med:  #9a6700; --med-bg:  #fdf4d8;
+    --low:  #1f6fb2; --low-bg:  #e3effa;
+    --none: #3f7d4f; --none-bg: #e4f3e8;
+    --na:   #5d6572; --na-bg:   #eceef1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111318; --surface: #1a1d24; --text: #e6e8ec; --muted: #9aa2ae; --border: #2c313b;
+      --accent: #7ea2ff; --code-bg: #232833;
+      --crit: #ff8a80; --crit-bg: #3d1a19;
+      --high: #ffab76; --high-bg: #3b2415;
+      --med:  #f2c94c; --med-bg:  #362d12;
+      --low:  #7fbfff; --low-bg:  #16283b;
+      --none: #7fd18f; --none-bg: #17301e;
+      --na:   #9aa2ae; --na-bg:   #262a33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 20px 64px; }
+  header { margin-bottom: 28px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; font-weight: 600; color: var(--accent); }
+  h1 { font-size: 28px; margin: 4px 0 12px; word-break: break-all; }
+  h2 { font-size: 19px; margin: 0 0 14px; }
+  h3 { font-size: 15px; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 22px; color: var(--muted); font-size: 13px; }
+  .meta b { color: var(--text); font-weight: 600; }
+  section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 22px 24px; margin-bottom: 18px; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+
+  /* Summary */
+  .summary { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+  .risk { border-radius: 10px; padding: 18px; text-align: center; }
+  .risk .label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; opacity: .85; }
+  .risk .value { font-size: 26px; font-weight: 700; margin-top: 4px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tile { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .tile .n { font-size: 24px; font-weight: 700; line-height: 1.1; }
+  .tile .t { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .tile.alert { border-color: var(--crit); }
+  .tile.alert .n { color: var(--crit); }
+  .sevbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 18px 0 8px; background: var(--na-bg); }
+  .sevbar span { display: block; height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  ol.recs { margin: 0; padding-left: 22px; }
+  ol.recs li { margin-bottom: 6px; }
+
+  /* Severity */
+  .sev { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .sev-CRITICAL { color: var(--crit); background: var(--crit-bg); }
+  .sev-HIGH     { color: var(--high); background: var(--high-bg); }
+  .sev-MEDIUM   { color: var(--med);  background: var(--med-bg); }
+  .sev-LOW      { color: var(--low);  background: var(--low-bg); }
+  .sev-NONE     { color: var(--none); background: var(--none-bg); }
+  .sev-UNKNOWN, .sev-NOT_ASSESSED { color: var(--na); background: var(--na-bg); }
+  .bg-CRITICAL { background: var(--crit); } .bg-HIGH { background: var(--high); }
+  .bg-MEDIUM { background: var(--med); } .bg-LOW { background: var(--low); }
+  .kev { display: inline-block; font-size: 11px; font-weight: 700; color: var(--crit); border: 1px solid var(--crit); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+  .tag { display: inline-block; font-size: 11px; color: var(--med); border: 1px solid var(--med); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .host + .host { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--border); }
+  .host-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
+
+  /* Details */
+  details { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
+  details > summary { cursor: pointer; padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before { content: "▸"; color: var(--muted); }
+  details[open] > summary::before { content: "▾"; }
+  details .body { padding: 0 14px 12px; }
+  .cve { padding: 10px 0; border-top: 1px solid var(--border); }
+  .cve, .cve .small, .note { overflow-wrap: anywhere; }
+  .cve-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 4px; }
+  .note { background: var(--med-bg); color: var(--text); border-left: 3px solid var(--med); padding: 8px 12px; border-radius: 4px; font-size: 13px; margin: 0 0 8px; }
+  .empty { color: var(--muted); font-style: italic; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 28px; }
+
+  @media (max-width: 760px) {
+    .summary { grid-template-columns: 1fr; }
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    section { padding: 18px 16px; }
+  }
+  @media print {
+    body { background: #fff; font-size: 12px; }
+    .wrap { max-width: none; padding: 0; }
+    section { break-inside: avoid-page; border-color: #ccc; }
+    details { break-inside: avoid; }
+    details > summary::before { content: ""; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Security Audit Report</div>
+  <h1>{{ target }}</h1>
+  <div class="meta">
+    <span><b>Generated</b> {{ generated_at }}</span>
+    <span><b>Scan started</b> {{ scan.started_at }}</span>
+    <span><b>Duration</b> {{ "%.1f"|format(scan.elapsed) }}s</span>
+    <span><b>Profile</b> {{ scan.profile }}</span>
+    <span><b>Tool</b> security-scanner {{ tool_version }}</span>
+  </div>
+</header>
+
+<section>
+  <h2>Executive summary</h2>
+  <div class="summary">
+    <div class="risk sev-{{ overall_risk }}">
+      <div class="label">Overall risk</div>
+      <div class="value">{{ overall_risk|sev_label }}</div>
+    </div>
+    <div>
+      <div class="tiles">
+        <div class="tile"><div class="n">{{ stats.hosts_up }}<span class="muted small"> / {{ stats.hosts_total }}</span></div><div class="t">Hosts up</div></div>
+        <div class="tile"><div class="n">{{ stats.open_ports }}</div><div class="t">Open ports</div></div>
+        <div class="tile"><div class="n">{{ stats.cves_total if cve_assessed else "–" }}</div><div class="t">Known CVEs</div></div>
+        <div class="tile{{ ' alert' if stats.kev_count }}"><div class="n">{{ stats.kev_count if cve_assessed else "–" }}</div><div class="t">Actively exploited</div></div>
+      </div>
+      {% if cve_assessed and stats.cves_total %}
+      <div class="sevbar" role="img" aria-label="CVEs by severity">
+        {% for s in severity_order %}{% if severity_counts[s] %}<span class="bg-{{ s }}" style="width: {{ (100 * severity_counts[s] / stats.cves_total)|round(2) }}%"></span>{% endif %}{% endfor %}
+      </div>
+      <div class="legend">
+        {% for s in severity_order %}<span><i class="bg-{{ s }}"></i>{{ s|sev_label }} {{ severity_counts[s] }}</span>{% endfor %}
+      </div>
+      {% elif not cve_assessed %}
+      <p class="muted small">CVE lookup was not run for this scan.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Recommendations</h2>
+  <ol class="recs">
+    {% for r in recommendations %}<li>{{ r }}</li>{% endfor %}
+  </ol>
+</section>
+
+{% if top_findings %}
+<section>
+  <h2>Key findings</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>CVE</th><th>Severity</th><th>CVSS</th><th>Affected</th><th>Description</th></tr></thead>
+    <tbody>
+    {% for c in top_findings %}
+      <tr>
+        <td class="mono" style="white-space:nowrap"><a href="{{ c.url }}" target="_blank" rel="noopener noreferrer">{{ c.cve_id }}</a>{% if c.known_exploited %}<span class="kev" title="Listed in CISA Known Exploited Vulnerabilities">KEV</span>{% endif %}{% if c.low_confidence %}<span class="tag" title="Keyword match; verify manually">verify</span>{% endif %}</td>
+        <td><span class="sev sev-{{ c.severity }}">{{ c.severity|sev_label }}</span></td>
+        <td class="num">{{ c.cvss_score if c.cvss_score is not none else "–" }}</td>
+        <td class="mono small">{{ c.affected|join(", ") }}</td>
+        <td class="small">{{ c.description|trunc(220) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{% if exposures %}
+<section>
+  <h2>Exposure findings</h2>
+  <p class="muted small" style="margin-top:-6px">Services that carry risk just by being reachable, regardless of version.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Issue</th></tr></thead>
+    <tbody>
+    {% for e in exposures %}
+      <tr><td class="mono">{{ e.host }}</td><td class="mono">{{ e.port }}/{{ e.protocol }}</td><td>{{ e.service }}</td><td class="small">{{ e.note }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<section>
+  <h2>Hosts and services</h2>
+  {% for h in hosts %}
+  <div class="host">
+    <div class="host-head">
+      <h3 class="mono">{{ h.address }}</h3>
+      {% if h.hostname %}<span class="muted">{{ h.hostname }}</span>{% endif %}
+      <span class="sev {{ 'sev-NONE' if h.state == 'up' else 'sev-UNKNOWN' }}">{{ h.state }}</span>
+      {% if h.os_matches %}<span class="muted small">OS guess: {{ h.os_matches|join(", ") }}</span>{% endif %}
+    </div>
+    {% if h.ports %}
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Port</th><th>Service</th><th>Product / Version</th><th>CVEs</th></tr></thead>
+      <tbody>
+      {% for p in h.ports %}
+        <tr>
+          <td class="mono">{{ p.port }}/{{ p.protocol }}</td>
+          <td>{{ p.service }}</td>
+          <td class="small">{{ p.banner or "–" }}</td>
+          <td>
+            {% if p.cve_count %}{{ p.cve_count }} <span class="sev sev-{{ p.worst }}">{{ p.worst|sev_label }}</span>
+            {% elif p.query_method == "skipped" %}<span class="muted small">not checked</span>
+            {% elif cve_assessed %}<span class="muted">0</span>
+            {% else %}<span class="muted">–</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="empty">No open ports found.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="empty">No hosts responded to the scan.</p>
+  {% endfor %}
+</section>
+
+{% if services_detail %}
+<section>
+  <h2>Vulnerability details</h2>
+  {% for s in services_detail %}
+  <details{{ " open" if loop.index <= 3 }}>
+    <summary>
+      <span class="mono"><b>{{ s.host }}:{{ s.port }}/{{ s.protocol }}</b></span>
+      <span>{{ s.product or s.service }} {{ s.version }}</span>
+      <span class="muted small">{{ s.cves|length }} CVE{{ "s" if s.cves|length != 1 }}</span>
+      {% if s.confidence == "low" %}<span class="tag">keyword match</span>{% endif %}
+      {% if s.distro %}<span class="tag" title="Distro packages often backport fixes">{{ s.distro }} package</span>{% endif %}
+    </summary>
+    <div class="body">
+      {% if s.confidence == "low" %}
+      <p class="note">Found by keyword search for <code>{{ s.query }}</code>, not an exact version match. Verify these apply before acting on them.</p>
+      {% endif %}
+      {% if s.distro %}
+      <p class="note">This is a {{ s.distro }} package. {{ s.distro }} backports security fixes without changing the upstream version number, so some of these CVEs may already be patched. Confirm against the distro's security tracker.</p>
+      {% endif %}
+      {% for c in s.cves %}
+      <div class="cve">
+        <div class="cve-head">
+          <a class="mono" href="{{ c.url }}" target="_blank" rel="noopener noreferrer"><b>{{ c.cve_id }}</b></a>
+          <span class="sev sev-{{ c.severity }}">{{ c.severity|sev_label }}{% if c.cvss_score is not none %} · {{ c.cvss_score }}{% endif %}</span>
+          {% if c.known_exploited %}<span class="kev">ACTIVELY EXPLOITED</span>{% endif %}
+          {% if c.published %}<span class="muted small">Published {{ c.published }}</span>{% endif %}
+        </div>
+        <div class="small">{{ c.description }}</div>
+        {% if c.vector %}<div class="muted small mono" style="margin-top:4px">CVSS {{ c.cvss_version }}: {{ c.vector }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      {% if s.note %}<p class="muted small" style="margin:8px 0 0">{{ s.note }}</p>{% endif %}
+    </div>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if skipped %}
+<section>
+  <h2>Not checked for CVEs</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for s in skipped %}
+      <tr><td class="mono">{{ s.host }}</td><td class="mono">{{ s.port }}/{{ s.protocol }}</td><td>{{ s.service }}</td><td class="small muted">{{ s.note }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<section>
+  <h2>Methodology</h2>
+  <ol class="small" style="margin:0; padding-left:20px">
+    <li><b>Port &amp; service scan:</b> nmap, <code>{{ scan.command_line }}</code></li>
+    <li><b>CVE lookup:</b> NIST National Vulnerability Database API 2.0. Services reporting a CPE were matched by exact product and version (high confidence); others by keyword search (low confidence, flagged "verify").</li>
+    <li><b>Severity:</b> CVSS base scores mapped to Critical (9.0+), High (7.0–8.9), Medium (4.0–6.9), Low (0.1–3.9). "KEV" marks CVEs in CISA's Known Exploited Vulnerabilities catalog.</li>
+    <li><b>Limitations:</b> matching is by advertised version. Linux distributions backport fixes without changing version numbers, so distro-packaged services can be flagged for CVEs that are already patched. Findings indicate likely exposure, not confirmed exploitability.</li>
+  </ol>
+</section>
+
+<footer>
+  Generated by security-scanner {{ tool_version }}. Results list publicly known vulnerabilities for detected versions and do not confirm exploitability.
+  Only scan systems you are authorized to test.
+</footer>
+
+</div>
+</body>
+</html>
